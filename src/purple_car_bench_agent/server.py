@@ -5,6 +5,7 @@ from pathlib import Path
 import warnings
 
 import uvicorn
+from starlette.applications import Starlette
 
 # Suppress Pydantic serialization warnings from litellm types
 # These occur because litellm's Message/Choices types don't set all optional fields
@@ -15,10 +16,10 @@ warnings.filterwarnings(
     module="pydantic.main"
 )
 
-from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import AgentCapabilities, AgentCard, AgentSkill
+from a2a.server.routes import create_jsonrpc_routes, create_agent_card_routes
+from a2a.types import AgentCard
 
 from car_bench_agent import CARBenchAgentExecutor
 
@@ -31,23 +32,33 @@ logger = configure_logger(role="agent", context="server")
 
 def prepare_agent_card(url: str) -> AgentCard:
     """Create the agent card for the CAR-bench purple agent."""
-    skill = AgentSkill(
-        id="car_assistant",
-        name="In-Car Voice Assistant",
-        description="Helps drivers with navigation, communication, charging, and other in-car tasks",
-        tags=["benchmark", "car-bench", "voice-assistant"],
-        examples=[],
-    )
-    return AgentCard(
+    card = AgentCard(
         name="car_bench_agent",
         description="In-car voice assistant agent for CAR-bench evaluation",
-        url=url,
         version="1.0.0",
-        default_input_modes=["text/plain"],
-        default_output_modes=["text/plain"],
-        capabilities=AgentCapabilities(),
-        skills=[skill],
+        default_input_modes=["text/plain", "application/json"],
+        default_output_modes=["text/plain", "application/json"],
     )
+
+    # Supported interfaces (replaces legacy url field)
+    iface = card.supported_interfaces.add()
+    iface.url = url
+    iface.protocol_binding = "JSONRPC"
+    iface.protocol_version = "1.0"
+
+    # Capabilities — explicitly declare all
+    card.capabilities.streaming = False
+    card.capabilities.push_notifications = False
+    card.capabilities.extended_agent_card = False
+
+    # Skills
+    skill = card.skills.add()
+    skill.id = "car_assistant"
+    skill.name = "In-Car Voice Assistant"
+    skill.description = "Helps drivers with navigation, communication, charging, and other in-car tasks"
+    skill.tags.extend(["benchmark", "car-bench", "voice-assistant"])
+
+    return card
 
 
 def main():
@@ -56,8 +67,8 @@ def main():
     parser.add_argument("--port", type=int, default=8080, help="Port to bind the server")
     parser.add_argument("--card-url", type=str, help="External URL for the agent card")
     parser.add_argument(
-        "--agent-llm", 
-        type=str, 
+        "--agent-llm",
+        type=str,
         default=None,  # Will use env var or fallback
         help="LLM model (can also be set via AGENT_LLM env var)"
     )
@@ -66,7 +77,7 @@ def main():
     parser.add_argument("--reasoning-effort", type=str, default="medium", help="Reasoning effort level for the LLM")
     parser.add_argument("--interleaved-thinking", action="store_true", help="Enable interleaved thinking for the LLM")
     args = parser.parse_args()
-    
+
     # Support both command-line args and environment variables
     # Priority: CLI args > env vars > default
     import os
@@ -88,27 +99,28 @@ def main():
         host=args.host,
         port=args.port
     )
-    
+
     card = prepare_agent_card(args.card_url or f"http://{args.host}:{args.port}/")
 
     request_handler = DefaultRequestHandler(
         agent_executor=CARBenchAgentExecutor(
-            model=agent_llm, 
-            temperature=completion_kwargs["temperature"], 
-            thinking=completion_kwargs["thinking"], 
-            reasoning_effort=completion_kwargs["reasoning_effort"], 
+            model=agent_llm,
+            temperature=completion_kwargs["temperature"],
+            thinking=completion_kwargs["thinking"],
+            reasoning_effort=completion_kwargs["reasoning_effort"],
             interleaved_thinking=completion_kwargs["interleaved_thinking"]
             ),
         task_store=InMemoryTaskStore(),
+        agent_card=card,
     )
 
-    app = A2AStarletteApplication(
-        agent_card=card,
-        http_handler=request_handler,
-    )
+    routes = create_jsonrpc_routes(request_handler, "/", enable_v0_3_compat=True)
+    card_routes = create_agent_card_routes(card)
+
+    app = Starlette(routes=routes + card_routes)
 
     uvicorn.run(
-        app.build(),
+        app,
         host=args.host,
         port=args.port,
         timeout_keep_alive=1000,

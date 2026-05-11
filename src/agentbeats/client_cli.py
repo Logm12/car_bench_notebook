@@ -3,19 +3,26 @@ import json
 import asyncio
 from pathlib import Path
 
+import httpx
 import tomllib
 
-from agentbeats.client import send_message
-from agentbeats.models import EvalRequest
-from a2a.types import (
-    AgentCard,
-    Message,
-    TaskStatusUpdateEvent,
-    TaskArtifactUpdateEvent,
-    Artifact,
-    TextPart,
-    DataPart,
+from a2a.client import (
+    A2ACardResolver,
+    ClientConfig,
+    ClientFactory,
 )
+from a2a.types import (
+    Message,
+    SendMessageRequest,
+    StreamResponse,
+    TaskState,
+    Role,
+)
+from a2a.helpers.proto_helpers import new_text_part
+from google.protobuf.json_format import MessageToDict
+
+from agentbeats.client import create_message, merge_parts
+from agentbeats.models import EvalRequest
 
 
 class AgentFailedError(Exception):
@@ -48,21 +55,25 @@ def parse_toml(d: dict[str, object]) -> tuple[EvalRequest, str, dict[str, str]]:
     )
     return eval_req, green_endpoint, role_to_id
 
+
 def parse_parts(parts) -> tuple[list, list]:
+    """Parse protobuf Parts into text and data lists."""
     text_parts = []
     data_parts = []
 
     for part in parts:
-        if isinstance(part.root, TextPart):
+        content_type = part.WhichOneof("content")
+        if content_type == "text":
             try:
-                data_item = json.loads(part.root.text)
+                data_item = json.loads(part.text)
                 data_parts.append(data_item)
             except Exception:
-                text_parts.append(part.root.text.strip())
-        elif isinstance(part.root, DataPart):
-            data_parts.append(part.root.data)
+                text_parts.append(part.text.strip())
+        elif content_type == "data":
+            data_parts.append(MessageToDict(part.data))
 
     return text_parts, data_parts
+
 
 def print_parts(parts, task_state: str | None = None):
     text_parts, data_parts = parse_parts(parts)
@@ -76,6 +87,19 @@ def print_parts(parts, task_state: str | None = None):
         output.extend(json.dumps(item, indent=2) for item in data_parts)
 
     print("\n".join(output) + "\n")
+
+
+_STATE_NAMES = {
+    TaskState.TASK_STATE_SUBMITTED: "submitted",
+    TaskState.TASK_STATE_WORKING: "working",
+    TaskState.TASK_STATE_COMPLETED: "completed",
+    TaskState.TASK_STATE_FAILED: "failed",
+    TaskState.TASK_STATE_CANCELED: "canceled",
+    TaskState.TASK_STATE_INPUT_REQUIRED: "input-required",
+    TaskState.TASK_STATE_REJECTED: "rejected",
+    TaskState.TASK_STATE_AUTH_REQUIRED: "auth-required",
+}
+
 
 async def main():
     if len(sys.argv) < 2:
@@ -94,50 +118,70 @@ async def main():
 
     req, green_url, role_to_id = parse_toml(data)
 
-    artifacts: list[Artifact] = []
+    # Collect artifacts from streaming events
+    collected_artifacts = []
 
-    async def event_consumer(event, card: AgentCard):
-        nonlocal artifacts
-        match event:
-            case Message() as msg:
-                print_parts(msg.parts)
+    # Send message via streaming
+    async with httpx.AsyncClient(timeout=300) as httpx_client:
+        resolver = A2ACardResolver(httpx_client=httpx_client, base_url=green_url)
+        agent_card = await resolver.get_agent_card()
+        config = ClientConfig(
+            httpx_client=httpx_client,
+            streaming=True,
+        )
+        factory = ClientFactory(config)
+        client = factory.create(agent_card)
 
-            case (task, TaskStatusUpdateEvent() as status_event):
-                status = status_event.status
-                parts = status.message.parts if status.message else []
-                print_parts(parts, status.state.value)
-                if status.state.value == "completed":
-                    print(task.artifacts)
-                    artifacts = task.artifacts
-                elif status.state.value not in ["submitted", "working"]:
-                    raise AgentFailedError(f"Agent returned status {status.state.value}.")
+        outbound_msg = create_message(text=req.model_dump_json())
+        request = SendMessageRequest(message=outbound_msg)
 
-            case (task, TaskArtifactUpdateEvent() as artifact_event):
-                print_parts(artifact_event.artifact.parts, "Artifact update")
+        try:
+            async for event in client.send_message(request):
+                payload_type = event.WhichOneof("payload")
 
-            case task, None:
-                status = task.status
-                parts = status.message.parts if status.message else []
-                print_parts(parts, task.status.state.value)
-                if status.state.value == "completed":
-                    print(task.artifacts)
-                    artifacts = task.artifacts
-                elif status.state.value not in ["submitted", "working"]:
-                    raise AgentFailedError(f"Agent returned status {status.state.value}.")
+                if payload_type == "message":
+                    msg = event.message
+                    print_parts(msg.parts)
 
-            case _:
-                print("Unhandled event")
+                elif payload_type == "task":
+                    task = event.task
+                    state_name = _STATE_NAMES.get(task.status.state, "unknown")
+                    parts = task.status.message.parts if task.status.message.parts else []
+                    print_parts(parts, state_name)
+                    if task.status.state == TaskState.TASK_STATE_COMPLETED:
+                        collected_artifacts.extend(task.artifacts)
+                    elif task.status.state not in (
+                        TaskState.TASK_STATE_SUBMITTED,
+                        TaskState.TASK_STATE_WORKING,
+                    ):
+                        raise AgentFailedError(f"Agent returned status {state_name}.")
 
-    msg = req.model_dump_json()
-    try:
-        await send_message(msg, green_url, streaming=True, consumer=event_consumer)
-    except AgentFailedError as e:
-        print(str(e))
-        sys.exit(1)
+                elif payload_type == "status_update":
+                    update = event.status_update
+                    state_name = _STATE_NAMES.get(update.status.state, "unknown")
+                    parts = update.status.message.parts if update.status.message.parts else []
+                    print_parts(parts, state_name)
+                    if update.status.state == TaskState.TASK_STATE_COMPLETED:
+                        pass  # Artifacts come via artifact_update events
+                    elif update.status.state not in (
+                        TaskState.TASK_STATE_SUBMITTED,
+                        TaskState.TASK_STATE_WORKING,
+                    ):
+                        raise AgentFailedError(f"Agent returned status {state_name}.")
+
+                elif payload_type == "artifact_update":
+                    update = event.artifact_update
+                    if update.artifact:
+                        print_parts(update.artifact.parts, "Artifact update")
+                        collected_artifacts.append(update.artifact)
+
+        except AgentFailedError as e:
+            print(str(e))
+            sys.exit(1)
 
     if output_path:
         all_data_parts = []
-        for artifact in artifacts:
+        for artifact in collected_artifacts:
             _, data_parts = parse_parts(artifact.parts)
             all_data_parts.extend(data_parts)
 

@@ -1,98 +1,136 @@
-"""Synchronous client for A2A communication - safe to use in thread pools."""
+"""Synchronous client for A2A communication - safe to use in thread pools.
+
+Uses v1.0 JSON-RPC format with protobuf-compatible JSON serialization.
+"""
 import json
 from uuid import uuid4
 
 import httpx
-from a2a.types import Message, Part, Role, TextPart, DataPart
+from a2a.types import Message, Part, Role, Task
+from a2a.helpers.proto_helpers import new_text_part, new_data_part
+from google.protobuf.json_format import MessageToDict, ParseDict
 
 
 DEFAULT_TIMEOUT = 300
 
+# A2A v1.0 headers
+A2A_HEADERS = {
+    "Content-Type": "application/a2a+json",
+    "A2A-Version": "1.0",
+}
 
-def create_message_with_parts(*, role: Role = Role.user, parts: list[Part], context_id: str | None = None, task_id: str | None = None) -> Message:
-    """Create a message with custom parts."""
-    return Message(
-        kind="message",
+
+def create_message_with_parts(*, role: int = Role.ROLE_USER, parts: list, context_id: str | None = None, task_id: str | None = None, metadata: dict | None = None) -> Message:
+    """Create a protobuf Message with given parts."""
+    msg = Message(
         role=role,
-        parts=parts,
         message_id=uuid4().hex,
-        context_id=context_id,
-        task_id=task_id,
     )
+    if context_id:
+        msg.context_id = context_id
+    if task_id:
+        msg.task_id = task_id
+    if metadata:
+        msg.metadata.update(metadata)
+    for part in parts:
+        msg.parts.append(part)
+    return msg
 
 
-def merge_parts(parts: list[Part]) -> str:
+def merge_parts(parts) -> str:
+    """Extract text content from a list of protobuf Parts."""
     chunks = []
     for part in parts:
-        if isinstance(part.root, TextPart):
-            chunks.append(part.root.text)
-        elif isinstance(part.root, DataPart):
-            chunks.append(json.dumps(part.root.data, indent=2))
+        content_type = part.WhichOneof("content")
+        if content_type == "text":
+            chunks.append(part.text)
+        elif content_type == "data":
+            chunks.append(json.dumps(MessageToDict(part.data), indent=2))
     return "\n".join(chunks)
 
 
-def send_message_with_parts_sync(parts: list[Part], base_url: str, context_id: str | None = None, task_id: str | None = None) -> dict:
+def send_message_with_parts_sync(parts: list, base_url: str, context_id: str | None = None, task_id: str | None = None, metadata: dict | None = None) -> dict:
     """Send a message with custom parts synchronously. Safe for use in thread pools.
-    
+
     Returns dict with context_id, task_id, response and status (if exists)
     """
-    # Create the message
-    outbound_msg = create_message_with_parts(parts=parts, context_id=context_id, task_id=task_id)
-    
-    # Prepare JSON-RPC request
+    # Create the protobuf message
+    outbound_msg = create_message_with_parts(parts=parts, context_id=context_id, task_id=task_id, metadata=metadata)
+
+    # Serialize to v1.0 JSON format
+    msg_dict = MessageToDict(outbound_msg, preserving_proto_field_name=True)
+
+    # Prepare JSON-RPC 2.0 request with v1.0 method name
     jsonrpc_request = {
         "jsonrpc": "2.0",
         "id": uuid4().hex,
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
-            "message": outbound_msg.model_dump(mode="json", exclude_none=True)
+            "message": msg_dict
         }
     }
-    
+
     # Use synchronous httpx client
     with httpx.Client(timeout=DEFAULT_TIMEOUT) as client:
         response = client.post(
             base_url,
             json=jsonrpc_request,
-            headers={"Content-Type": "application/json"}
+            headers=A2A_HEADERS,
         )
         response.raise_for_status()
-        
+
         result = response.json()
-        
+
         if "error" in result:
             raise RuntimeError(f"JSON-RPC error: {result['error']}")
-        
+
         response_data = result.get("result", {})
-        
+
         # Parse the response based on type
         outputs = {
             "response": "",
             "context_id": None,
             "task_id": None,
-            "raw_message": None
+            "raw_message": None,
+            "raw_artifacts": [],
         }
-        
-        # Check if it's a Message or Task response
-        if response_data.get("kind") == "message":
-            # Direct message response
-            msg = Message.model_validate(response_data)
-            outputs["context_id"] = msg.context_id
-            outputs["task_id"] = msg.task_id
+
+        # v1.0 wraps in SendMessageResponse with "message" or "task" key
+        if "message" in response_data:
+            msg = ParseDict(response_data["message"], Message())
+            outputs["context_id"] = msg.context_id or None
+            outputs["task_id"] = msg.task_id or None
             outputs["response"] = merge_parts(msg.parts)
             outputs["raw_message"] = msg
-        elif response_data.get("kind") == "task":
-            # Task response
-            from a2a.types import Task
-            task = Task.model_validate(response_data)
-            outputs["context_id"] = task.context_id
-            outputs["task_id"] = task.id
-            outputs["status"] = task.status.state.value
-            if task.status.message:
+        elif "task" in response_data:
+            task = ParseDict(response_data["task"], Task())
+            outputs["context_id"] = task.context_id or None
+            outputs["task_id"] = task.id or None
+            if task.status and task.status.state:
+                state_name = TaskState_to_string(task.status.state)
+                outputs["status"] = state_name
+            if task.status and task.status.message and task.status.message.parts:
                 outputs["response"] = merge_parts(task.status.message.parts)
                 outputs["raw_message"] = task.status.message
             if task.artifacts:
                 for artifact in task.artifacts:
                     outputs["response"] += merge_parts(artifact.parts)
-        
+                    outputs["raw_artifacts"].append(artifact)
+
         return outputs
+
+
+def TaskState_to_string(state: int) -> str:
+    """Convert protobuf TaskState enum to a human-readable string."""
+    from a2a.types import TaskState
+    _map = {
+        TaskState.TASK_STATE_SUBMITTED: "submitted",
+        TaskState.TASK_STATE_WORKING: "working",
+        TaskState.TASK_STATE_COMPLETED: "completed",
+        TaskState.TASK_STATE_FAILED: "failed",
+        TaskState.TASK_STATE_CANCELED: "canceled",
+        TaskState.TASK_STATE_INPUT_REQUIRED: "input-required",
+        TaskState.TASK_STATE_REJECTED: "rejected",
+        TaskState.TASK_STATE_AUTH_REQUIRED: "auth-required",
+    }
+    return _map.get(state, f"unknown({state})")

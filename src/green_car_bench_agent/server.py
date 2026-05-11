@@ -7,6 +7,7 @@ from pathlib import Path
 import warnings
 
 import uvicorn
+from starlette.applications import Starlette
 
 # Suppress Pydantic serialization warnings from litellm types
 # These occur because litellm's Message/Choices types don't set all optional fields
@@ -17,10 +18,10 @@ warnings.filterwarnings(
     module="pydantic.main"
 )
 
-from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import AgentCapabilities, AgentCard, AgentSkill
+from a2a.server.routes import create_jsonrpc_routes, create_agent_card_routes
+from a2a.types import AgentCard
 
 from agentbeats.green_executor import GreenExecutor
 from car_bench_evaluator import CARBenchEvaluator
@@ -34,25 +35,36 @@ logger = configure_logger(role="evaluator", context="server")
 
 def car_bench_evaluator_agent_card(name: str, url: str) -> AgentCard:
     """Create the agent card for the CAR-bench evaluator."""
-    skill = AgentSkill(
-        id="car_bench_evaluation",
-        name="CAR-bench Evaluation",
-        description="Evaluates agents on CAR-bench voice assistant tasks",
-        tags=["benchmark", "evaluation", "car-bench"],
-        examples=[
-            '{"participants": {"agent": "http://localhost:8080"}, "config": {"num_tasks": 3}}'
-        ],
-    )
-    return AgentCard(
+    card = AgentCard(
         name=name,
         description="CAR-bench evaluator - tests agents on in-car voice assistant tasks",
-        url=url,
         version="1.0.0",
-        default_input_modes=["text"],
-        default_output_modes=["text"],
-        capabilities=AgentCapabilities(streaming=True),
-        skills=[skill],
+        default_input_modes=["text/plain", "application/json"],
+        default_output_modes=["text/plain", "application/json"],
     )
+
+    # Supported interfaces (replaces legacy url field)
+    iface = card.supported_interfaces.add()
+    iface.url = url
+    iface.protocol_binding = "JSONRPC"
+    iface.protocol_version = "1.0"
+
+    # Capabilities — explicitly declare all
+    card.capabilities.streaming = True
+    card.capabilities.push_notifications = False
+    card.capabilities.extended_agent_card = False
+
+    # Skills
+    skill = card.skills.add()
+    skill.id = "car_bench_evaluation"
+    skill.name = "CAR-bench Evaluation"
+    skill.description = "Evaluates agents on CAR-bench voice assistant tasks"
+    skill.tags.extend(["benchmark", "evaluation", "car-bench"])
+    skill.examples.extend([
+        '{"participants": {"agent": "http://localhost:8080"}, "config": {"num_tasks": 3}}'
+    ])
+
+    return card
 
 
 async def main():
@@ -92,14 +104,15 @@ async def main():
     request_handler = DefaultRequestHandler(
         agent_executor=executor,
         task_store=InMemoryTaskStore(),
-    )
-
-    server = A2AStarletteApplication(
         agent_card=agent_card,
-        http_handler=request_handler,
     )
 
-    uvicorn_config = uvicorn.Config(server.build(), host=args.host, port=args.port)
+    routes = create_jsonrpc_routes(request_handler, "/", enable_v0_3_compat=True)
+    card_routes = create_agent_card_routes(agent_card)
+
+    app = Starlette(routes=routes + card_routes)
+
+    uvicorn_config = uvicorn.Config(app, host=args.host, port=args.port)
     uvicorn_server = uvicorn.Server(uvicorn_config)
     await uvicorn_server.serve()
 
