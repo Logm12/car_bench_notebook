@@ -23,6 +23,9 @@ from a2a.server.tasks import InMemoryTaskStore
 from a2a.server.routes import create_jsonrpc_routes, create_agent_card_routes
 from a2a.types import AgentCard
 
+import litellm
+litellm.drop_params = True
+
 from agentbeats.evaluator_executor import EvaluatorExecutor
 from car_bench_paths import CAR_BENCH_DATA_DIR, SETUP_SCRIPT
 from car_bench_evaluator import CARBenchEvaluator

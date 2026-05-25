@@ -1,5 +1,5 @@
-# Local smoke scenario for the baseline LiteLLM agent under test.
-# Runs one train task from each CAR-bench task type.
+# Scenario for collecting all training trajectories.
+# Runs all tasks from the CAR-bench train split.
 
 [evaluator]
 endpoint = "http://127.0.0.1:8081"
@@ -12,9 +12,9 @@ cmd = ".venv/Scripts/python src/track_1_agent_under_test/server.py --host 127.0.
 [config]
 num_trials = 1
 task_split = "train"
-tasks_base_num_tasks = 1
-tasks_hallucination_num_tasks = 1
-tasks_disambiguation_num_tasks = 1
+tasks_base_num_tasks = 50
+tasks_hallucination_num_tasks = 48
+tasks_disambiguation_num_tasks = 31
 max_steps = 50
 user_model = "gpt-4o-mini"
 user_provider = "openai"

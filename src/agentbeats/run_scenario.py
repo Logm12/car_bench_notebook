@@ -130,6 +130,9 @@ def main():
     parent_bin = str(Path(sys.executable).parent)
     base_env = os.environ.copy()
     base_env["PATH"] = parent_bin + os.pathsep + base_env.get("PATH", "")
+    base_env["PYTHONUTF8"] = "1"
+    base_env["PYTHONIOENCODING"] = "utf-8"
+    base_env["PYTHONUNBUFFERED"] = "1"
 
     procs = []
     try:
@@ -202,15 +205,21 @@ def main():
         for p in procs:
             if p.poll() is None:
                 try:
-                    os.killpg(p.pid, signal.SIGTERM)
-                except ProcessLookupError:
+                    if hasattr(os, "killpg"):
+                        os.killpg(p.pid, signal.SIGTERM)
+                    else:
+                        p.terminate()
+                except (ProcessLookupError, PermissionError):
                     pass
         time.sleep(1)
         for p in procs:
             if p.poll() is None:
                 try:
-                    os.killpg(p.pid, signal.SIGKILL)
-                except ProcessLookupError:
+                    if hasattr(os, "killpg"):
+                        os.killpg(p.pid, signal.SIGKILL)
+                    else:
+                        p.kill()
+                except (ProcessLookupError, PermissionError):
                     pass
 
 
