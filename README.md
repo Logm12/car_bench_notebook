@@ -301,40 +301,97 @@ The test suite includes:
 ```text
 .
 ├── src/
-│   ├── agentbeats/                         A2A runner helpers and client CLI
-│   ├── evaluator/                          CAR-bench evaluator A2A server
-│   ├── track_1_agent_under_test/           Track 1 minimal template agent
-│   ├── track_2_agent_under_test_codex/     Track 2 direct Codex JSON agent
-│   ├── track_2_agent_under_test_codex_planner/  Track 2 planner/executor agent
-│   ├── track_2_agent_under_test_codex_python/   Track 2 Python-call DSL agent
-│   ├── tool_call_types.py                  Shared tool-call data models
-│   └── turn_metrics.py                     Shared metadata keys
+│   ├── agentbeats/                                     A2A runner helpers and client CLI
+│   │   ├── Dockerfile.a2a-client
+│   │   ├── client.py                                   Async A2A HTTP client
+│   │   ├── client_cli.py                               CLI entry point for running scenarios
+│   │   ├── evaluator_executor.py                       Evaluator-side agent executor
+│   │   ├── models.py                                   Shared data models
+│   │   ├── run_scenario.py                             Scenario runner (car-bench-run entrypoint)
+│   │   ├── sync_client.py                              Synchronous A2A client wrapper
+│   │   └── tool_provider.py                            Tool call forwarding helpers
+│   │
+│   ├── evaluator/                                      CAR-bench evaluator A2A server
+│   │   ├── Dockerfile.evaluator
+│   │   ├── car_bench_evaluator.py                      Main evaluator logic
+│   │   ├── car_bench_paths.py                          Path resolution for CAR-bench assets
+│   │   └── server.py                                   Evaluator HTTP server entrypoint
+│   │
+│   ├── track_1_agent_under_test/                       Track 1 minimal template agent
+│   │   ├── Dockerfile.track-1-agent-under-test
+│   │   ├── car_bench_agent.py                          Agent executor implementation
+│   │   ├── server.py                                   A2A server entrypoint
+│   │   └── README.md
+│   │
+│   ├── track_2_agent_under_test_codex/                 Track 2 direct Codex JSON agent
+│   │   ├── Dockerfile.track-2-agent-under-test-codex
+│   │   ├── car_bench_agent.py                          Agent executor with Codex JSON output
+│   │   ├── codex_client.py                             Codex CLI subprocess client
+│   │   ├── server.py                                   A2A server entrypoint
+│   │   └── README.md
+│   │
+│   ├── track_2_agent_under_test_codex_planner/         Track 2 planner/executor agent
+│   │   ├── Dockerfile.track-2-agent-under-test-codex-planner
+│   │   ├── planner_agent.py                            Planner + executor agent logic
+│   │   ├── server.py                                   A2A server entrypoint
+│   │   └── README.md
+│   │
+│   ├── track_2_agent_under_test_codex_python/          Track 2 Python-call DSL agent
+│   │   ├── Dockerfile.track-2-agent-under-test-codex-python
+│   │   ├── python_call_agent.py                        Python-call DSL agent logic
+│   │   ├── server.py                                   A2A server entrypoint
+│   │   └── README.md
+│   │
+│   ├── extract_trajectories.py                         Utility to extract evaluation trajectories
+│   ├── logging_utils.py                                Shared logging setup
+│   ├── tool_call_types.py                              Shared tool-call data models (Protobuf wrappers)
+│   └── turn_metrics.py                                 Shared metadata keys for turn-level metrics
 │
 ├── scenarios/
-│   ├── track_1_agent_under_test/           Scenario TOML files for Track 1
-│   ├── track_2_agent_under_test_codex/
-│   ├── track_2_agent_under_test_codex_planner/
-│   └── track_2_agent_under_test_codex_python/
+│   ├── track_1_agent_under_test/
+│   │   ├── local_smoke.toml                            Local Python, train split, 1 task per type, 1 trial
+│   │   ├── local_test_set.toml                         Local Python, public test split, 3 trials
+│   │   ├── local_docker_smoke.toml                     Local Docker build, train smoke
+│   │   ├── local_docker_test_set.toml                  Local Docker build, public test split
+│   │   ├── ghcr_smoke.toml                             GHCR image, train smoke
+│   │   └── ghcr_test_set.toml                          GHCR image, public test split
+│   │
+│   ├── track_2_agent_under_test_codex/                 Same 6-file matrix for Track 2 Codex JSON
+│   ├── track_2_agent_under_test_codex_planner/         Same 6-file matrix for Track 2 planner
+│   ├── track_2_agent_under_test_codex_python/          Same 6-file matrix for Track 2 Python-call
+│   └── README.md                                       Scenario config reference
 │
 ├── tests/
-│   ├── test_a2a_response_contract.py
-│   ├── test_codex_planner_agent.py
-│   ├── test_codex_python_call_agent.py
-│   └── test_scenario_contract.py
+│   ├── test_a2a_response_contract.py                   A2A message shapes, token usage, turn metrics
+│   ├── test_codex_planner_agent.py                     Planner/executor agent internal logic
+│   ├── test_codex_python_call_agent.py                 Python-call DSL agent response handling
+│   └── test_scenario_contract.py                       Scenario TOML structure and compose generation
 │
 ├── docs/
-│   ├── development-guide.md                A2A turn contract details
-│   ├── agent-under-test-harnessing.md      Allowed harness boundaries
-│   ├── codex-harness-patterns.md           Track 2 model and harness patterns
-│   └── a2a-introduction.md                 A2A protocol background
+│   ├── development-guide.md                            A2A turn contract — inbound/outbound message shapes
+│   ├── agent-under-test-harnessing.md                  Allowed agent harness boundaries
+│   ├── codex-harness-patterns.md                       Track 2 model and harness patterns
+│   └── a2a-introduction.md                             A2A protocol background
+│
+├── notebooks/
+│   ├── qwen_coder_baseline.ipynb                       vLLM-based Qwen baseline evaluation
+│   ├── finetune_llm.ipynb                              Fine-tuning with ORPO
+│   ├── finetune_llm_dpo.ipynb                          Fine-tuning with DPO
+│   ├── offline_finetune_llm_local_pc.ipynb             Offline ORPO fine-tuning (local)
+│   └── offline_finetune_llm_dpo_local_pc.ipynb         Offline DPO fine-tuning (local)
+│
+├── data/
+│   └── ft_dataset.jsonl                                Fine-tuning dataset
 │
 ├── scripts/
-│   └── setup_car_bench.sh                  Clones third_party/car-bench
+│   ├── setup_car_bench.sh                              Clones third_party/car-bench
+│   ├── demo_function_calling.py                        Function calling demonstration script
+│   └── make_offline_notebooks.py                       Generates offline notebook variants
 │
 ├── third_party/
-│   └── car-bench/                          Official CAR-bench repo (local dependency)
+│   └── car-bench/                                      Official CAR-bench repo (local dependency)
 │
-├── generate_compose.py                     Generates docker-compose.yml from scenario TOML
+├── generate_compose.py                                 Generates docker-compose.yml from scenario TOML
 ├── pyproject.toml
 ├── .env.example
 └── README.md

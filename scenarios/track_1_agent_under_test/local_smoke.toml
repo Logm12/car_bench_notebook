@@ -12,9 +12,9 @@ cmd = ".venv/Scripts/python src/track_1_agent_under_test/server.py --host 127.0.
 [config]
 num_trials = 1
 task_split = "train"
-tasks_base_num_tasks = 1
-tasks_hallucination_num_tasks = 1
-tasks_disambiguation_num_tasks = 1
+tasks_base_num_tasks = 2
+tasks_hallucination_num_tasks = 2
+tasks_disambiguation_num_tasks = 2
 max_steps = 50
 user_model = "gpt-4o-mini"
 user_provider = "openai"
