@@ -2,11 +2,11 @@
 
 [evaluator]
 endpoint = "http://127.0.0.1:8081"
-cmd = ".venv/Scripts/python src/evaluator/server.py --host 127.0.0.1 --port 8081"
+cmd = ".venv/bin/python src/evaluator/server.py --host 127.0.0.1 --port 8081"
 
 [agent_under_test]
 endpoint = "http://127.0.0.1:8080"
-cmd = ".venv/Scripts/python src/track_1_agent_under_test/server.py --host 127.0.0.1 --port 8080 --agent-llm gpt-4o-mini --temperature 0.0"
+cmd = ".venv/bin/python src/track_1_agent_under_test/server.py --host 127.0.0.1 --port 8080 --agent-llm gpt-4o-mini --temperature 0.0"
 
 [config]
 num_trials = 3
