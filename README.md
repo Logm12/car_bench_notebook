@@ -29,7 +29,35 @@ Executing `bash run_pipeline.sh` automatically performs:
 
 ---
 
-## 2. Environment Configuration (`.env`)
+## 2. CAR-Bench Execution Environment (`carbench_env`)
+
+The training and evaluation pipeline relies on the `carbench_env` environment stack (Python 3.10, PyTorch 2.11.0, CUDA 12.8/13.0, Unsloth 2026.6.9, vLLM 0.24.0). Exact pinned package requirements are stored in [`requirements.txt`](file:///e:/VinAI/VSG/car-bench-ijcai-vsf/requirements.txt) and [`llm-training/requirements.txt`](file:///e:/VinAI/VSG/car-bench-ijcai-vsf/llm-training/requirements.txt).
+
+### Replicating the Server Environment
+
+#### Option A: Using Conda
+```bash
+# Create and activate conda environment
+conda create -n carbench_env python=3.10 -y
+conda activate carbench_env
+
+# Install exact pinned dependencies
+pip install -r requirements.txt
+```
+
+#### Option B: Using `uv` (Recommended for Fast Resolution)
+```bash
+# Create virtual environment with Python 3.10
+uv venv .venv --python 3.10
+source .venv/bin/activate  # On Linux/macOS (.venv\Scripts\activate on Windows)
+
+# Install pinned requirements via uv
+uv pip install -r requirements.txt
+```
+
+---
+
+## 3. Environment Configuration (`.env`)
 
 The project uses a `.env` file (copied from `.env.example`) to configure tokens, API backends, and repository targets:
 
@@ -50,7 +78,7 @@ HF_MODEL_MERGED_REPO=upwitu/qwen3.5-4b-sft-carbench
 
 ---
 
-## 3. Automatic Dataset Ingestion from Hugging Face
+## 4. Automatic Dataset Ingestion from Hugging Face
 
 All SFT training datasets are packaged and published on the Hugging Face Hub:
 - **Dataset Repository**: [upwitu/carbench_sft_benchmark_data](https://huggingface.co/datasets/upwitu/carbench_sft_benchmark_data)
@@ -65,14 +93,14 @@ All SFT training datasets are packaged and published on the Hugging Face Hub:
 
 ---
 
-## 4. Documentation Catalog
+## 5. Documentation Catalog
 
 - **Training Code Logic**: [`docs/TRAINING_LOGIC_DOCUMENTATION.md`](file:///e:/VinAI/VSG/car-bench-ijcai-vsf/docs/TRAINING_LOGIC_DOCUMENTATION.md) (Detailed breakdown of Unsloth initialization, CUDA pre-loading, loss masking via `train_on_responses_only`, and LoRA hyperparameter configuration).
 - **Data Generator Architecture**: [`data/generation_code_documentation.md`](file:///e:/VinAI/VSG/car-bench-ijcai-vsf/data/generation_code_documentation.md) (Architecture of `--mode simulated` vs `--mode api`, Mermaid flowcharts, and 58-tool registry specs).
 
 ---
 
-## 5. Codebase Architecture
+## 6. Codebase Architecture
 
 ### A. Data Generation Engine (`data/`)
 - `data/generate_car_bench_sft_data.py`: Source code generating 8,568 OpenAI-formatted SFT samples. Supports dual execution backends: `--mode simulated` (0-cost offline rule-based simulation) and `--mode api` (online vLLM server or OpenAI API endpoint).
@@ -82,6 +110,7 @@ All SFT training datasets are packaged and published on the Hugging Face Hub:
 - `llm-training/train_base.py` & `llm-training/train_base.sh`: SFT training pipeline for Base Tasks and Safety Confirmations.
 - `llm-training/train_disambiguation.py` & `llm-training/train_disambiguation.sh`: SFT training pipeline for Disambiguation Tasks (prioritizing internal preference lookups before user clarification).
 - `llm-training/train_hallucination.py` & `llm-training/train_hallucination.sh`: SFT training pipeline for Hallucination Tasks (1-sentence polite refusals on pruned capabilities and multi-turn feature switching).
+- `llm-training/requirements.txt`: Pinned package requirements from server `carbench_env`.
 - `llm-training/TRAINING_LOGIC_DOCUMENTATION.md`: Technical documentation for training pipeline logic.
 
 ### C. Benchmark Evaluation Suite (`scenarios/`, `src/`, `scripts/`)
@@ -92,7 +121,7 @@ All SFT training datasets are packaged and published on the Hugging Face Hub:
 
 ---
 
-## 6. Execution Commands Summary
+## 7. Execution Commands Summary
 
 ### Master Pipeline (All-in-One)
 ```bash
