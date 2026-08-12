@@ -6,14 +6,14 @@ This repository provides an end-to-end pipeline for generating in-domain SFT dat
 
 ## 1. Quickstart Workflow
 
-The setup workflow is designed to be completed in three steps:
+The setup workflow is designed to be completed in three simple commands:
 
 ```bash
 # Step 1: Clone the repository
 git clone https://github.com/Logm12/car_bench_openai_dataset.git
 cd car_bench_openai_dataset
 
-# Step 2: Configure environment variables
+# Step 2: Create .env configuration from template
 cp .env.example .env
 # Edit .env to set your HF_TOKEN, OPENAI_API_BASE, OPENAI_API_KEY, etc.
 
@@ -23,29 +23,31 @@ bash run_pipeline.sh
 
 Executing `bash run_pipeline.sh` automatically performs:
 1. Environment variable loading from `.env`.
-2. Python environment synchronization via `uv sync`.
+2. Python environment synchronization via `uv sync` or Conda.
 3. In-domain SFT dataset generation (`data/generate_car_bench_sft_data.py`).
-4. End-to-end SFT fine-tuning across Base, Disambiguation, and Hallucination tasks.
+4. End-to-end SFT fine-tuning across Base, Disambiguation, and Hallucination tasks (`llm-training/train_*.sh`).
 
 ---
 
 ## 2. CAR-Bench Execution Environment (`carbench_env`)
 
-The training and evaluation pipeline relies on the `carbench_env` environment stack (Python 3.10, PyTorch 2.11.0, CUDA 12.8/13.0, Unsloth 2026.6.9, vLLM 0.24.0). Exact pinned package requirements are stored in [`requirements.txt`](file:///e:/VinAI/VSG/car-bench-ijcai-vsf/requirements.txt) and [`llm-training/requirements.txt`](file:///e:/VinAI/VSG/car-bench-ijcai-vsf/llm-training/requirements.txt).
+Training scripts and benchmark evaluations run inside the `carbench_env` environment stack (Python 3.10, PyTorch 2.11.0, CUDA 12.8/13.0, Unsloth 2026.6.9, vLLM 0.24.0).
 
-### Replicating the Server Environment
+Exact pinned package versions from the production GPU server are stored in [`requirements.txt`](file:///e:/VinAI/VSG/car-bench-ijcai-vsf/requirements.txt) and [`llm-training/requirements.txt`](file:///e:/VinAI/VSG/car-bench-ijcai-vsf/llm-training/requirements.txt).
 
-#### Option A: Using Conda
+### Replicating `carbench_env` via Conda
+
 ```bash
-# Create and activate conda environment
+# Create Conda environment with Python 3.10
 conda create -n carbench_env python=3.10 -y
 conda activate carbench_env
 
-# Install exact pinned dependencies
+# Install exact pinned packages from server carbench_env
 pip install -r requirements.txt
 ```
 
-#### Option B: Using `uv` (Recommended for Fast Resolution)
+### Replicating `carbench_env` via `uv` (Recommended for Speed)
+
 ```bash
 # Create virtual environment with Python 3.10
 uv venv .venv --python 3.10
@@ -53,6 +55,9 @@ source .venv/bin/activate  # On Linux/macOS (.venv\Scripts\activate on Windows)
 
 # Install pinned requirements via uv
 uv pip install -r requirements.txt
+
+# Or synchronize environment automatically
+uv sync
 ```
 
 ---
@@ -62,15 +67,15 @@ uv pip install -r requirements.txt
 The project uses a `.env` file (copied from `.env.example`) to configure tokens, API backends, and repository targets:
 
 ```env
-# Hugging Face Authentication Token
+# 1. Hugging Face Authentication Token
 HF_TOKEN=your_huggingface_token_here
 
-# LLM API Backend Configuration (vLLM / OpenAI / LiteLLM)
+# 2. LLM API Backend Configuration (vLLM / OpenAI / LiteLLM)
 OPENAI_API_BASE=http://localhost:8000/v1
 OPENAI_API_KEY=your_openai_or_vllm_key_here
 CAR_BENCH_MODEL=Qwen/Qwen2.5-7B-Instruct
 
-# Hugging Face Target Repositories
+# 3. Hugging Face Target Repositories
 HF_DATASET_REPO=upwitu/carbench_sft_benchmark_data
 HF_MODEL_LORA_REPO=upwitu/qwen3.5-4b-sft-carbench-lora
 HF_MODEL_MERGED_REPO=upwitu/qwen3.5-4b-sft-carbench
