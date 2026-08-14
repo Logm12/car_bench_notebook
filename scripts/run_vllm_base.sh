@@ -11,7 +11,7 @@ export VLLM_USE_V1=0
 export VLLM_USE_FLASHINFER_SAMPLER=0
 
 # Default HuggingFace repo ID
-MODEL_NAME="upwitu/qwen3.5-4b-sft-carbench"
+MODEL_NAME="dragonstorm123/qwen3.5-4b-sft-base"
 
 # Local freshly-trained model candidate paths
 LOCAL_MODELS=(

@@ -459,11 +459,33 @@ if not args_cli.smoke_test:
         print(f"Loss plot saved to: {plot_path}")
 
 # =====================================================================
-# 7. SAVE ADAPTERS AND MERGED MODEL
+# 7. SAVE ADAPTERS, MERGED MODEL AND PUSH TO HUGGING FACE HUB
 # =====================================================================
+MERGED_REPO_ID = "dragonstorm123/qwen3.5-4b-sft-base"
+LORA_REPO_ID = "dragonstorm123/qwen3.5-4b-sft-base-lora"
+
 print(f"Saving PEFT LoRA adapter checkpoint to {ADAPTER_PATH}...")
 model.save_pretrained(ADAPTER_PATH)
 tokenizer.save_pretrained(ADAPTER_PATH)
+
+try:
+    print(f"Uploading LoRA adapter to Hugging Face Hub ({LORA_REPO_ID})...")
+    model.push_to_hub(LORA_REPO_ID, tokenizer=tokenizer, token=os.environ.get("HF_TOKEN"))
+    print(f"Successfully uploaded LoRA adapter to {LORA_REPO_ID}!")
+except Exception as e:
+    print(f"Warning: Failed pushing LoRA adapter to HF Hub: {e}")
+
+try:
+    print(f"Uploading merged 16-bit model to Hugging Face Hub ({MERGED_REPO_ID})...")
+    model.push_to_hub_merged(
+        MERGED_REPO_ID,
+        tokenizer,
+        save_method="merged_16bit",
+        token=os.environ.get("HF_TOKEN")
+    )
+    print(f"Successfully uploaded merged 16-bit model to {MERGED_REPO_ID}!")
+except Exception as e:
+    print(f"Warning: Failed to push merged model to HF Hub: {e}")
 
 try:
     print("Merging and saving model weights to 16-bit precision locally...")
