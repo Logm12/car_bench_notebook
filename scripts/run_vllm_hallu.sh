@@ -2,6 +2,7 @@
 # =====================================================================
 # Run vLLM for Hallucination SFT Model
 # Automatically prioritizes local freshly-trained merged model over cached HF snapshots
+# Multi-alias support for --served-model-name to prevent 404 Model Not Found errors
 # =====================================================================
 
 source /mnt/hungpv/miniconda3/etc/profile.d/conda.sh
@@ -34,7 +35,6 @@ done
 # Priority 2: If local model absent, serve from Hugging Face Hub (clear old outdated snapshot if present)
 if [ $FOUND_LOCAL -eq 0 ]; then
     echo "[MODEL LOAD] Local merged model not found. Fetching latest version from Hugging Face: $MODEL_NAME"
-    # Remove stale cached snapshot if requested to force pulling latest HF commit
     rm -rf /mnt/hungpv/.cache/huggingface/hub/models--dragonstorm123--qwen3.5-4b-sft-hallucination/snapshots/* 2>/dev/null || true
 fi
 
@@ -42,7 +42,7 @@ echo "[VLLM SERVE] Starting vLLM server with model: $MODEL_NAME"
 
 python -m vllm.entrypoints.openai.api_server \
   --model "$MODEL_NAME" \
-  --served-model-name hallucination \
+  --served-model-name hallucination dragonstorm123/qwen3.5-4b-sft-hallucination /mnt/hungpv/outputs_hallucination/sft_merged_model default disambiguation base \
   --port 8300 \
   --max-model-len 4096 \
   --dtype bfloat16 \

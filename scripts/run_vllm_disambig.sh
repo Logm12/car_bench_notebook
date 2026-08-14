@@ -2,6 +2,7 @@
 # =====================================================================
 # Run vLLM for Disambiguation SFT Model
 # Automatically prioritizes local freshly-trained merged model over cached HF snapshots
+# Multi-alias support for --served-model-name to prevent 404 Model Not Found errors
 # =====================================================================
 
 source /mnt/hungpv/miniconda3/etc/profile.d/conda.sh
@@ -41,7 +42,7 @@ echo "[VLLM SERVE] Starting vLLM server with model: $MODEL_NAME"
 
 python -m vllm.entrypoints.openai.api_server \
   --model "$MODEL_NAME" \
-  --served-model-name disambiguation \
+  --served-model-name disambiguation dragonstorm123/qwen3.5-4b-sft-disambiguation /mnt/hungpv/outputs_disambiguation/sft_merged_model default hallucination base \
   --port 8300 \
   --max-model-len 4096 \
   --dtype bfloat16 \

@@ -1,0 +1,22 @@
+# Scenario TOML for benchmarking the newly trained SFT Hallucination model from HuggingFace
+# Model: dragonstorm123/qwen3.5-4b-sft-hallucination
+
+[evaluator]
+endpoint = "http://127.0.0.1:8081"
+cmd = ".venv/bin/python src/evaluator/server.py --host 127.0.0.1 --port 8081"
+
+[agent_under_test]
+endpoint = "http://127.0.0.1:8080"
+cmd = ".venv/bin/python src/track_1_agent_under_test/server.py --host 127.0.0.1 --port 8080 --agent-llm openai/dragonstorm123/qwen3.5-4b-sft-hallucination --api-base http://localhost:8000/v1 --temperature 0.0"
+
+[config]
+num_trials = 1
+task_split = "test"
+tasks_base_num_tasks = 0
+tasks_hallucination_num_tasks = 50
+tasks_disambiguation_num_tasks = 0
+max_steps = 50
+user_model = "gpt-4o-mini"
+user_provider = "openai"
+policy_evaluator_model = "gpt-4o-mini"
+policy_evaluator_provider = "openai"

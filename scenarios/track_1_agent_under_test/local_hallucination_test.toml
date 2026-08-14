@@ -8,7 +8,7 @@ cmd = ".venv/bin/python src/evaluator/server.py --host 127.0.0.1 --port 8081"
 
 [agent_under_test]
 endpoint = "http://127.0.0.1:8080"
-cmd = "env AGENT_API_BASE=http://127.0.0.1:8300/v1 AGENT_API_KEY=ollama .venv/bin/python src/track_1_agent_under_test/server.py --host 127.0.0.1 --port 8080 --agent-llm openai/hallucination --temperature 0.0"
+cmd = "env AGENT_API_BASE=http://127.0.0.1:8300/v1 AGENT_API_KEY=local-dummy-key .venv/bin/python src/track_1_agent_under_test/server.py --host 127.0.0.1 --port 8080 --agent-llm openai/hallucination --temperature 0.0"
 
 [config]
 num_trials = 3
